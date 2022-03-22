@@ -15,6 +15,18 @@ void setup() {
   pinMode(3, OUTPUT);
   pinMode(5, OUTPUT);
   pinMode(6, OUTPUT);
+  pinMode(9, INPUT);
+  goDefault();
+}
+
+void goDefault(){
+  digitalWrite(2, LOW);
+  while(digitalRead(9) != HIGH){
+    digitalWrite(5, HIGH);
+    delayMicroseconds(40);
+    digitalWrite(5, LOW);
+    delayMicroseconds(40);
+  }
 }
 
 // with destination figured out
@@ -22,20 +34,21 @@ void go(){
   if (rnat != destination){ //if dropper isn't already there
     digitalWrite(5, rnat > destination); //set the direction depending on which way the destination is from where we are now
     delay(42);
-    for (byte i; i < storyHeight*abs(rnat-destination); i++){ //each loop is a step
-      digitalWrite(2, HIGH);
-      delayMicroseconds(420);
-      digitalWrite(2, LOW);
-      delayMicroseconds(420);
+    for (byte i = 0; i < storyHeight*abs(rnat-destination); i++){//each loop is a 1/16 turn
+      for (byte j = 0; j < 200; j++)
+      digitalWrite(5, HIGH);
+      delayMicroseconds(40);
+      digitalWrite(5, LOW);
+      delayMicroseconds(40);
     }
     rnat = destination; //save location for later
   }
-  digitalWrite(6, carddir); // set direction of carddrop
+  digitalWrite(3, carddir); // set direction of carddrop
   for (byte i; i < throwoff; i++){ //throw the card off
-    digitalWrite(3, HIGH);
-    delayMicroseconds(420);
-    digitalWrite(3, LOW);
-    delayMicroseconds(420);
+    digitalWrite(6, HIGH);
+    delayMicroseconds(40);
+    digitalWrite(6, LOW);
+    delayMicroseconds(40);
   }
 }
 
