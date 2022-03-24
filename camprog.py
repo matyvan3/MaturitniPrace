@@ -2,22 +2,17 @@ from os import system as run
 from PIL import Image
 from colorrec import Card
 from time import sleep as wait
-import pigpio, smbus
+import pigpio, smbus2, picamera
 
 #set up GPIO pins
 pins = pigpio.pi()
-I2C = smbus.SMBus(1)
+I2C = smbus2.SMBus(1)
 
 pin_on = 0
 pin_color = 1
 pin_rarity = 2
 pin_edition = 3
 pins_input = [pin_on, pin_color, pin_rarity, pin_edition]
-
-LED_color = 4
-LED_rarity = 5
-LED_edition = 6
-pins_output = [LED_color, LED_rarity, LED_edition]
 
 for pin in pins_input:
     pins.set_mode(pin, pigpio.INPUT)
@@ -28,12 +23,20 @@ for pin in pins_output:
 #get a list for storing values of all the card stacks
 stacks = []
 
-#start the reading cycle
-while True:
-    if pins.read(pin_on) == 1:
+#prepare camera
+cam = picamera.PiCamera()
+cam.start_preview()
+
+#wait until initiated
+while pins.read(pin_on) == 0:
+    pass
+
+#get going
+end = False
+while pins.read(pin_on) == 0 or not end:
         #take the card picture and prepare it for detection
-        run("sh /home/pi/Desktop/take_a_pic.sh")
         picture_path = r"/home/pi/Desktop/pic.jpg"
+        cam.capture(picture_path)
         Image.open(picture_path).resize(size = (1600, 1200), box = (0, 0, 3280, 2343)).save(picture_path)
         card = Card(picture_path)
 
@@ -86,4 +89,7 @@ while True:
         for char in str(side) + str(position):
             to_send.append(ord(char))
         I2C.write_i2c_block_data(0x02, 0x00, to_send)
-        wait(2)
+        wait(5)
+
+#stop preview to stop wasting power
+cam.stop_preview()

@@ -153,10 +153,3 @@ class Card:
             with open("editions.txt", "a") as editions:
                 editions.write(", ".join(symbol) + "\n")
         return x
-
-path = 0
-while path != ".jpg":
-    path = input("Filename? ") + ".jpg"
-    if (not path == ".jpg"):
-        card = Card(path)
-        print(card.color(), card.rarity(), card.edition())
