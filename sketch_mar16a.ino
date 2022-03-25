@@ -1,3 +1,12 @@
+
+
+
+
+// Kód je funkční, ale není použitý z důvodu smrti Arduina
+
+
+
+
 #include <Wire.h>;
 
 // some variables for later use
