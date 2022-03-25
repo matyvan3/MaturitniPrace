@@ -11,7 +11,8 @@ pin_on = 26
 pin_color = 17
 pin_rarity = 27
 pin_edition = 22
-pins_input = [pin_on, pin_color, pin_rarity, pin_edition]
+pin_reset = 16
+pins_input = [pin_on, pin_color, pin_rarity, pin_edition, pin_reset]
 
 pin_m1_dir = 5
 pin_m1_go = 6
