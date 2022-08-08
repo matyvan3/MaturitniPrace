@@ -1,5 +1,5 @@
 from os import system as run
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from time import sleep as wait
 from difflib import SequenceMatcher
 import pytesseract as OCR
@@ -7,16 +7,20 @@ import pytesseract as OCR
 #set up Card class with details of the current card
 class Card:
     def __init__(self, picture_path):
-        self.image = Image.open(picture_path)
+        self.image = Image.open(picture_path).crop((15, 17, 260, 43))
         self.name = ""
         self.valid = False
         self.detect()
 
     #prepares image to be readable by OCR
     def prepare_image(self):
-        for x in range(5):
-            self.image = self.image.filter(ImageFilter.SHARPEN)
-        self.image = self.image.filter(ImageFilter.GaussianBlur)
+        self.image = ImageEnhance.Brightness(self.image).enhance(1.5)
+        #for x in range(1):
+            #self.image = self.image.filter(ImageFilter.SHARPEN)
+        self.image = ImageEnhance.Color(self.image).enhance(0)
+        self.image = ImageEnhance.Sharpness(self.image).enhance(2)
+        self.image = ImageEnhance.Contrast(self.image).enhance(4)
+        #self.image = self.image.filter(ImageFilter.GaussianBlur)
 
     #takes text read from card and compares it with names in database to find the most probable card
     def match_card(self, reading):
@@ -29,6 +33,7 @@ class Card:
                 same = [name, similarity]
         print(reading, same)
         self.name = same[0]
+        self.similarity = same[1]
         
     #card detection method - detects text and fetches card's values
     def detect(self):
@@ -57,53 +62,67 @@ with open("CardsList.txt", "r", encoding = "utf8") as CardsList:
 #get going
 end = False
 stacks = []
+gute, simity, alle = 0, 0, 0
 props = input("Properties?(0 = color, 1 = mana value, 2 = edition): ")
-while not end:
-        #take the card picture and prepare it for detection
-        picture_path = input("name: ").replace(" ", "_").lower() + ".jpg"
-        card = Card(picture_path)
-        if card.valid:
-            #grab the user-chosen categories to compare
-            categories = []
-            for cat in map(int, props):
-                categories.append(card.properties[cat])
-            if "2" in props:
-                editions = True
-            else:
-                editions = False
-                
-            #find the stack to drop card on
-            stacknum = 0
-            not_this = True
-            if len(stacks) > 0:
-                for stack in stacks:
-                    not_this = False
-                    for x in range(len(categories) - editions):
-                        if stack[x] == card.properties[x]:
-                            pass
-                        else:
-                            not_this = True
-                    if editions:
-                        edition_intersect = [edition for edition in card.properties[-1] if edition in stack[-1]]
-                        if len(edition_intersect) > 0:
-                            stack[-1] = edition_intersect
-                        else:
-                            not_this = True
-                    if not_this and stacknum < 24:
-                        stacknum += 1
-                    else:
-                        break
-                
-            #remember new stack
-            if len(stacks) < 25 and not_this:
-                stacks.append(categories)
-            elif len(stacks) == 25 and not_this:
-                stacks.append("leftover")
-                
-            #find out the position to go to and drop off the card
-            position = stacknum
 
-        #in case card is not readable enough, drop it in the leftover bin
+#while not end:
+for y in range(1000):
+    try:
+        Image.open("testimages/testimage" + str(y) + ".jpg")
+    except:
+        continue
+    #take the card picture and prepare it for detection
+    picture_path = "testimages/testimage" + str(y) + ".jpg"#input("name: ").replace(" ", "_").lower() + ".jpg"
+    card = Card(picture_path)
+    if card.valid:
+        #grab the user-chosen categories to compare
+        categories = []
+        for cat in map(int, props):
+            if cat <= 2:
+                categories.append(card.properties[cat])
+        if "2" in props:
+            editions = True
         else:
-            position = 25
-        print(position, stacks[position])
+            editions = False
+                
+        #find the stack to drop card on
+        stacknum = 0
+        not_this = True
+        if len(stacks) > 0:
+            for stack in stacks:
+                not_this = False
+                for x in range(len(categories) - editions):
+                    if stack[x] == card.properties[x]:
+                        pass
+                    else:
+                        not_this = True
+                if editions:
+                    edition_intersect = [edition for edition in card.properties[-1] if edition in stack[-1]]
+                    if len(edition_intersect) > 0:
+                        stack[-1] = edition_intersect
+                    else:
+                        not_this = True
+                if not_this and stacknum < 24:
+                    stacknum += 1
+                else:
+                    break
+                
+        #remember new stack
+        if len(stacks) < 25 and not_this:
+            stacks.append(categories)
+        elif len(stacks) == 25 and not_this:
+            stacks.append("leftover")
+                
+        #find out the position to go to and drop off the card
+        position = stacknum
+
+    #in case card is not readable enough, drop it in the leftover bin
+    else:
+        position = 25
+    if not end:
+        alle += 1
+        if position != 25:
+            gute += 1
+            simity += card.similarity
+
+print(gute/alle, simity/gute)
