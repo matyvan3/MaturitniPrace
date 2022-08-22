@@ -1,15 +1,14 @@
-from os import system as run
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from time import sleep as wait
 from difflib import SequenceMatcher
-from picamera import piCamera
-import pytesseract as OCR
+from picamera import PiCamera
+from pytesseract import image_to_string as OCR
 import pigpio
 
 #set up Card class with details of the current card
 class Card:
     def __init__(self, picture_path):
-        self.image = Image.open(picture_path).crop((250, 320, 2960, 1630))
+        self.image = Image.open(picture_path).crop((550, 600, 2660, 850))
         self.name = ""
         self.valid = False
         self.detect()
@@ -31,27 +30,28 @@ class Card:
             if similarity > same[1]:
                 same = [name, similarity]
         self.name = same[0]
-        self.similarity = same[1]
+        print(self.name)
         
     #card detection method - detects text and fetches card's values
     def detect(self):
         global end
         self.valid = False
         self.prepare_image()
-        self.name = OCR.image_to_string(self.image).lower().replace("\n", " ")
+        self.name = OCR(self.image).lower().replace("\n", " ")
         if self.name.replace(" ", "") == "end":
             end = True
         elif self.name.replace(" ", "") == "":
             pass
         else:
             self.match_card(self.name)
-            self.properties = properties[names.index(self.name)]
-            self.valid = True
+            if self.name != 0:
+                self.properties = properties[names.index(self.name)]
+                self.valid = True
+            else:
+                self.valid = False
 
 #preheat camera
-cam = PiCamera()
-cam.resolution = (3280, 2464)
-cam.start_preview()
+cam = PiCamera(resolution = (3280, 2464))
 
 #prepare card database
 names, properties = [], []
@@ -64,58 +64,56 @@ with open("CardsList.txt", "r", encoding = "utf8") as CardsList:
 
 #prepare GPIO
 Pin = pigpio.pi()
-Pin_enable = 6
+Pin_enable = 16
 X_step = 26
 X_dir = 21
 Y_step = 19
 Y_dir = 20
+voltage = 1
 Pin_col = 22
 Pin_val = 27
 Pin_ed = 17
-Pin_reset = 14
-Pin_start = 2
+Pin_reset = 12
 
-for pin in [Pin_ed, Pin_col, Pin_val, Pin_reset, Pin_start]:
+for pin in [Pin_ed, Pin_col, Pin_val, Pin_reset]:
     Pin.set_mode(pin, pigpio.INPUT)
-for pin in [Pin_enable, X_step, Y_step, X_dir, Y_dir]:
+    Pin.set_pull_up_down(pin, pigpio.PUD_DOWN)
+for pin in [Pin_enable, X_step, Y_step, X_dir, Y_dir, voltage]:
     Pin.set_mode(pin, pigpio.OUTPUT)
+    
+Pin.write(voltage, 1)
 
 #define movement methods
 def move_x(direction, distance):
     Pin.write(X_dir, direction)
     for temp in range(distance):
         Pin.write(X_step, 1)
-        wait(0.042)
+        wait(0.00002)
         Pin.write(X_step, 0)
-        wait(0.042)
+        wait(0.00002)
         
 def move_y(direction, distance):
     Pin.write(Y_dir, direction)
     for temp in range(distance):
         Pin.write(Y_step, 1)
-        wait(0.042)
+        wait(0.0006)
         Pin.write(Y_step, 0)
-        wait(0.042)
+        wait(0.0006)
 
 def pos_reset():
     Pin.write(Pin_enable, 0)
-    while not Pin_reset.read():
+    while Pin_reset.read():
         move_x(0, 16)
     Pin.write(Pin_enable, 1)
 
 #last variables' initiation
 end = False
-stacks = []
-stacklength = 6950 #(distance to cover / distance per revolution) * steps per revolution
+stacks = [["first", "stack", ["leftover"]]]
+stacklength = 4350 #(distance to cover (6.525cm) / distance per revolution (3mm)) * steps per revolution (200)
 rnat = 0
 
-#wait for button press
-while not Pin.read(Pin_start):
-    pass
-wait(1)
-
-#loop until last card or second button press
-while not end and not Pin.read(Pin_start):
+#loop until last card
+while not (end):
     
     #take the card picture and prepare it for detection
     picture_path = "/home/pi/Desktop/card.jpg"
@@ -124,7 +122,7 @@ while not end and not Pin.read(Pin_start):
 
     #if valid, find its stack
     if card.valid:
-        stacknum = 0
+        stacknum = 1
         not_this = True
         if len(stacks) > 0:
             for stack in stacks:
@@ -134,7 +132,7 @@ while not end and not Pin.read(Pin_start):
                         pass
                     else:
                         not_this = True
-                if Pin.read(Pin_val):
+                if not Pin.read(Pin_val):
                     if stack[1] == card.properties[1]:
                         pass
                     else:
@@ -151,17 +149,22 @@ while not end and not Pin.read(Pin_start):
                     break
                 
         #remember new stack
-        if len(stacks) < 25 and not_this:
+        if len(stacks) < 26 and not_this:
             stacks.append(card.properties)
-        elif len(stacks) == 25 and not_this:
-            stacks.append("leftover")
+        
+        #if all stacks are full and neither is compatible with the card, leftover it is
+        else:
+            stacknum = 0
 
-    #in case card is not readable enough, leftover stack it is
+    #in case card is not readable enough, leftover stack is ready
     else:
-        stacknum = 25
+        stacknum = 0
         
     #go to the correct position and drop off the card
     Pin.write(Pin_enable, 0)
     move_x(stacknum>rnat, abs(stacknum-rnat)*stacklength)
     move_y(stacknum%2, 256)
     Pin.write(Pin_enable, 1)
+    
+    #remember the new position
+    rnat = stacknum
