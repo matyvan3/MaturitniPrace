@@ -1,14 +1,16 @@
+from os import system as run
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from time import sleep as wait
 from difflib import SequenceMatcher
-from picamera import PiCamera
-from pytesseract import image_to_string as OCR
-import pigpio
+from picamzero import Camera
+import pytesseract as OCR
+import RPi.GPIO as GPIO
+import json
 
 #set up Card class with details of the current card
 class Card:
     def __init__(self, picture_path):
-        self.image = Image.open(picture_path).crop((550, 600, 2660, 850))
+        self.image = Image.open(picture_path)#.crop((250, 320, 2960, 1630))
         self.name = ""
         self.valid = False
         self.detect()
@@ -24,147 +26,138 @@ class Card:
     def match_card(self, reading):
         same = [0, 0]
         matcher = SequenceMatcher(None, "", reading)
-        for name in names:
+        for name in list(cards):
             matcher.set_seq1(name)
             similarity = round(matcher.ratio(), 5)
             if similarity > same[1]:
                 same = [name, similarity]
         self.name = same[0]
-        print(self.name)
         
     #card detection method - detects text and fetches card's values
     def detect(self):
         global end
         self.valid = False
         self.prepare_image()
-        self.name = OCR(self.image).lower().replace("\n", " ")
+        self.name = OCR.image_to_string(self.image).lower().replace("\n", " ")
         if self.name.replace(" ", "") == "end":
             end = True
         elif self.name.replace(" ", "") == "":
             pass
         else:
             self.match_card(self.name)
-            if self.name != 0:
-                self.properties = properties[names.index(self.name)]
-                self.valid = True
+            self.properties = cards[self.name][0]
+            self.valid = True
+            
+    def fits(self, stack):
+        for parameter in list(stack.keys()):
+            if parameter in ["colorIdentity", "colors", "types", "supertypes"] and stack[parameter] in self.properties[parameter]:
+                pass
+            elif parameter == "convertedManaCost" and stack[parameter] != "7+" and self.properties[parameter][0] == stack[parameter]:
+                pass
+            elif parameter == "convertedManaCost" and stack[parameter] == "7+" and float(self.properties[parameter]) >= 7:
+                pass
+            elif parameter == "legalities" and self.properties[parameter][stack[parameter]] == "Legal":
+                pass
             else:
-                self.valid = False
+                return 0
+        return 1
 
 #preheat camera
-cam = PiCamera(resolution = (3280, 2464))
+cam = Camera()
+cam.resolution = (3280, 2464)
+cam.start_preview()
+picture_path = "/home/user/Desktop/test.jpg"
 
-#prepare card database
-names, properties = [], []
-with open("CardsList.txt", "r", encoding = "utf8") as CardsList:
-    for line in CardsList.readlines():
-        line = line.split("%")
-        names.append(line[0].lower())
-        properties.append(line[1].split("|"))
-        properties[-1][-1] = properties[-1][-1][:-1].split(";")
+#prepare card values
+with open("AtomicCards.json", "r", encoding = "utf8") as file:
+    cards = json.load(file)["data"]
 
 #prepare GPIO
-Pin = pigpio.pi()
-Pin_enable = 16
-X_step = 26
-X_dir = 21
-Y_step = 19
-Y_dir = 20
-voltage = 1
-Pin_col = 22
-Pin_val = 27
-Pin_ed = 17
-Pin_reset = 12
+pinDict = {}
+slotDistance = 69
+with open("config.txt", "r") as pinList:
+    for pinTemp in pinList.readlines():
+        pin = pinTemp.split(";")
+        if pin[0] == "steps":
+            slotDistance = (pin[1])
+        elif pin != []:
+            pinDict[pin[0]] = int(pin[1])
+        else:
+            pass
 
-for pin in [Pin_ed, Pin_col, Pin_val, Pin_reset]:
-    Pin.set_mode(pin, pigpio.INPUT)
-    Pin.set_pull_up_down(pin, pigpio.PUD_DOWN)
-for pin in [Pin_enable, X_step, Y_step, X_dir, Y_dir, voltage]:
-    Pin.set_mode(pin, pigpio.OUTPUT)
+for pin in [pinDict.get(pin) for pin in ["hstop", "vstops", "end"]]:
+    GPIO.setup(pin, GPIO.IN, pull_up_down = GPIO.PUD_DOWN)
     
-Pin.write(voltage, 1)
+for pin in [pinDict.get(pin) for pin in ["enable", "pump", "light", "hstep", "hdir", "vstep", "vdir"]]:
+    GPIO.setup(pin, GPIO.OUT)
+
+#ease picking a state of a GPIO output
+level = [GPIO.LOW, GPIO.HIGH]
 
 #define movement methods
-def move_x(direction, distance):
-    Pin.write(X_dir, direction)
-    for temp in range(distance):
-        Pin.write(X_step, 1)
-        wait(0.00002)
-        Pin.write(X_step, 0)
-        wait(0.00002)
+def move_h(stack):
+    global slotDistance
+    GPIO.output(pinDict["hdir"], level[1])
+    hpwm = GPIO.PWM(pinDict["hstep"], slotDistance*2)
+    hpwm.start(40)
+    wait(stack/2)
+    hpwm.stop()
         
-def move_y(direction, distance):
-    Pin.write(Y_dir, direction)
-    for temp in range(distance):
-        Pin.write(Y_step, 1)
-        wait(0.0006)
-        Pin.write(Y_step, 0)
-        wait(0.0006)
+def reset_h():
+    GPIO.output(pinDict["hdir"], level[0])
+    hpwm = GPIO.PWN(pinDict["hdir"], 128)
+    hpwm.start(40)
+    while not GPIO.input(pinDict["hstop"]):
+        pass
+    hpwm.stop()
+    
+def move_v(direction):
+    GPIO.output(pinDict["hdir"], level[direction])
+    vpwm = GPIO.PWM(pinDict["vstep"], 512)
+    vpwm.start(40)
+    wait(0.3)
+    while not GPIO.input(pinDict["vstops"]):
+        pass
+    wait(0.05)
+    vpwm.stop()
 
-def pos_reset():
-    Pin.write(Pin_enable, 0)
-    while Pin_reset.read():
-        move_x(0, 16)
-    Pin.write(Pin_enable, 1)
+def drop_card():
+    move_v(0)
+    GPIO.output(pinDict["pump"], level[1])
+    wait(2)
+    GPIO.output(pinDict["pump"], level[0])
 
-#last variables' initiation
-end = False
-stacks = [["first", "stack", ["leftover"]]]
-stacklength = 4350 #(distance to cover (6.525cm) / distance per revolution (3mm)) * steps per revolution (200)
-rnat = 0
+#load stacks selection
+os.run("python3 SlotSetup.py")
+with open("stacks.json", "r", encoding = "utf8") as file:
+    stacks = json.load(file)
 
-#loop until last card
-while not (end):
+#loop until last card or second button press
+while not end and not GPIO.input(pinDict["end"]):
+    
+    #reset position and find the first card
+    move_v(1)
+    reset_h()
+    move_v(0)
     
     #take the card picture and prepare it for detection
-    picture_path = "/home/pi/Desktop/card.jpg"
-    cam.capture(picture_path)
+    cam.take_photo(picture_path)
     card = Card(picture_path)
 
     #if valid, find its stack
     if card.valid:
-        stacknum = 1
         not_this = True
-        if len(stacks) > 0:
-            for stack in stacks:
-                not_this = False
-                if Pin.read(Pin_col):
-                    if stack[0] == card.properties[0]:
-                        pass
-                    else:
-                        not_this = True
-                if not Pin.read(Pin_val):
-                    if stack[1] == card.properties[1]:
-                        pass
-                    else:
-                        not_this = True
-                if Pin.read(Pin_ed):
-                    edition_intersect = [edition for edition in card.properties[-1] if edition in stack[-1]]
-                    if len(edition_intersect) > 0:
-                        stack[-1] = edition_intersect
-                    else:
-                        not_this = True
-                if not_this and stacknum < 24:
-                    stacknum += 1
-                else:
-                    break
-                
-        #remember new stack
-        if len(stacks) < 26 and not_this:
-            stacks.append(card.properties)
-        
-        #if all stacks are full and neither is compatible with the card, leftover it is
-        else:
-            stacknum = 0
+        for stacknum in range(8):
+            if card.fits(stacks[str(stacknum)]) or stacknum == 7:
+                break
+            else:
+                pass
 
-    #in case card is not readable enough, leftover stack is ready
+    #in case card is not readable enough, leftover stack it is
     else:
-        stacknum = 0
+        stacknum = 7
         
     #go to the correct position and drop off the card
-    Pin.write(Pin_enable, 0)
-    move_x(stacknum>rnat, abs(stacknum-rnat)*stacklength)
-    move_y(stacknum%2, 256)
-    Pin.write(Pin_enable, 1)
-    
-    #remember the new position
-    rnat = stacknum
+    move_v(1)
+    move_h(stackNum)
+    drop_card()
