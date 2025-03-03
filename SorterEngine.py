@@ -105,14 +105,14 @@ def move_h(stack):
         
 def reset_h():
     GPIO.output(pinDict["hdir"], level[0])
-    hpwm = GPIO.PWN(pinDict["hdir"], 128)
+    hpwm = GPIO.PWM(pinDict["hdir"], 128)
     hpwm.start(40)
     while not GPIO.input(pinDict["hstop"]):
         pass
     hpwm.stop()
     
 def move_v(direction):
-    GPIO.output(pinDict["hdir"], level[direction])
+    GPIO.output(pinDict["vdir"], level[direction])
     vpwm = GPIO.PWM(pinDict["vstep"], 512)
     vpwm.start(40)
     wait(0.3)
@@ -128,7 +128,7 @@ def drop_card():
     GPIO.output(pinDict["pump"], level[0])
 
 #load stacks selection
-os.run("python3 SlotSetup.py")
+run("python3 SlotSetup.py")
 with open("stacks.json", "r", encoding = "utf8") as file:
     stacks = json.load(file)
 
