@@ -91,6 +91,10 @@ for pin in [pinDict.get(pin) for pin in ["hstop", "vstops", "end"]]:
 for pin in [pinDict.get(pin) for pin in ["enable", "pump", "light", "hstep", "hdir", "vstep", "vdir"]]:
     GPIO.setup(pin, GPIO.OUT)
 
+for pin in [10,21,23,24]:
+    GPIO.setup(pin, GPIO.OUT)
+    GPIO.output(pin, GPIO.HIGH)
+
 #ease picking a state of a GPIO output
 level = [GPIO.LOW, GPIO.HIGH]
 
