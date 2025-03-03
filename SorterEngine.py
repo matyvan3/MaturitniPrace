@@ -159,5 +159,5 @@ while not end and not GPIO.input(pinDict["end"]):
         
     #go to the correct position and drop off the card
     move_v(1)
-    move_h(stackNum)
+    move_h(stackNum+1)
     drop_card()
